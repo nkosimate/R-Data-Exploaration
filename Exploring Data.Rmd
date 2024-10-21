@@ -1,0 +1,233 @@
+---
+title: "R Exploratory Data"
+author: "Nkosinathi Mate"
+date: "14-Dec-2023"
+output: html_document
+---
+
+```{r include = F} 
+# code block checking working directory and loading typical libraries
+getwd()
+library(caret)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(corrplot)
+library(Hmisc)
+```
+
+
+```{r}
+data1 = read.csv("solar.csv", stringsAsFactors = T)
+```
+
+Task 1.
+```{r}
+summary(data1)
+```
+
+```{r}
+head(data1,3)
+```
+There are 2 variables with missing data, Pressure and Snowing have missing data.
+
+Task 2. a)
+Continent would be an unsuitable predictor because there is only one value in all rows and such it gives no information 
+ID would be unsuitable as it has only unique values and would not assist in the prediction of data
+
+
+b)
+```{r}
+data1$continent = NULL
+data1$ID = NULL
+summary(data1)
+```
+Task 3.
+```{r}
+ggplot(data = data1, aes(x = pressure)) + geom_histogram()
+```
+
+Pressure seems to have quite a fairly normal distribution. Thus using the mean value will be a representative typical value.
+a)
+```{r}
+summary(data1$pressure)
+data1$pressure = impute((data1$pressure),mean)
+summary(data1$pressure)
+```
+
+```{r}
+ggplot(data = data1, aes(x = snowing)) + geom_bar()
+```
+Snowing is not fairly distributed between the No and the yes however it could be attributed that the missing values were just a mistake and were to be taken as No snow seen on that observation.
+b)
+```{r}
+summary(data1$snowing)
+data1$snowing[data1$snowing == ""] = "No"
+summary(data1$snowing)
+data1$snowing = droplevels(data1$snowing)
+summary(data1$snowing)
+
+```
+Task 4.
+```{r}
+summary(data1$smart)
+data1$smart[data1$smart == "n"] = "No"
+data1$smart[data1$smart == "y"] = "Yes"
+summary(data1$smart)
+data1$smart = droplevels(data1$smart)
+summary(data1$smart)
+```
+Task 5.
+```{r}
+convertToNumerical = function(x){
+  x = as.character(x)
+  x = str_remove_all(x,"N")
+  x = as.numeric(x)
+}
+
+test1 = data1$latitude
+test1 = sapply(test1,convertToNumerical)
+summary(test1)
+
+data1$latitude = test1
+```
+Task 6.
+```{r}
+#summary(data1$cloudcov)
+
+proccessFraction= function(x){
+  x = as.character(x)
+  x = str_replace_all(x,"'","")
+  parts = unlist(str_split(x,"/"))
+  parts = as.numeric(parts)
+  x = (parts[1]/parts[2])
+  x = as.numeric(x)
+}
+
+#f = proccessFraction("'1/2'")
+f = data1$cloudcov
+f = sapply(f,proccessFraction)
+summary(f)
+
+data1$cloudcov = f
+```
+Task 7.
+```{r}
+#summary(data1$date)
+
+d = data1$date
+d = as.POSIXct(strptime(d,"%d-%B-%Y"))
+
+data1$date = d
+summary(data1$date)
+```
+```{r}
+
+#d1 = data1$date[1]
+#d1m = strftime(d1,"%b")
+#d1com = strftime(d1,"%j")
+data1$month = strftime(data1$date, "%b")
+data1$day = strftime(data1$date,"%j")
+```
+Task 8
+```{r}
+data2 = read.csv("solarClean.csv", stringsAsFactors = T)
+summary(data2)
+```
+Task 9.
+```{r}
+ggplot(data = data2, aes(x = powergen)) + geom_histogram()
+```
+Powergen has a fairly normal distribution, with a mean and median and very close values to show normal distribution, and values ranging from 0 to close to 7
+
+```{r}
+ggplot(data = data2, aes(x = cloudcov)) + geom_histogram()
+```
+Cloud cov is positively skewed which we can tell by the median being less than the mean. With a majority of the data being at 0. and a maximum at 100.
+
+Task 10.
+```{r}
+corrs = cor(data2[c(1:7)])
+corrplot(corrs, method = 'number')
+#pairs(data2)
+```
+lattitude, cloudcov and panels are most higly correlated with powergen. However noticing that temp and humidity are closely correlated as well.
+```{r}
+ggplot(data2, aes(x = powergen, y = day, col = smart)) + geom_point()
+```
+powergen seems to increase as the days increase, there is quite an even distribution amongst the scatters with the no and yes values relativelty close to each other.
+
+Task 11.
+```{r}
+ggplot(data = data2, aes(x = powergen,
+y = month)) + geom_boxplot()
+
+
+```
+We can see that the mean values for each month are close together ranging from about 2.9 to about 4.3. Each month has a few outliers on either side except for March.
+
+Task 12.
+
+create a split
+```{r}
+selected = createDataPartition(data2$powergen, p = 0.7, list = F)
+trainData = data2[selected, ]
+testData = data2[-selected, ]
+```
+
+```{r}
+control = trainControl(method = "cv", number = 5)
+```
+
+```{r}
+m1 = train(powergen ~ latitude+cloudcov+panels, data = data2,method = "lm",trControl = control)
+summary(m1)
+```
+```{r}
+pred = predict(m1, testData)
+postResample(pred, testData$powergen)
+```
+
+```{r}
+data3 = data2
+data3$month = NULL
+m2 = train(powergen ~., data = data3,method = "lm" ,trControl = control)
+summary(m2)
+```
+```{r}
+pred = predict(m2, testData)
+postResample(pred, testData$powergen)
+```
+
+Task 13.
+```{r}
+grid = expand.grid(list(C = c(0.1, 1, 10), sigma = c(0.1,1,10)))
+### train the radial SVM model
+m3 = train(data = data3, powergen ~ ., method = "svmRadial",
+trControl = control, tuneGrid = grid)
+summary(m3)
+```
+
+```{r}
+### Evaluate the results for different C and sigma values
+m3$results # table of performance metrics for each C and sigma
+plot(m3) # plots variation in performance over parameters
+m3$bestTune # best choice of parameters from those tried
+
+```
+```{r}
+postResample(predict(m3, testData), testData$powergen)
+```
+The reason the SVM automatically standardise is because if the different features in the data have significantly different ranges of numerical values then SVM may focus too much on the features with larger numerical values. So by default R standardises them to bring them closer together
+
+Task 14
+```{r}
+confint = resamples(list(lr = m1, lr2 = m2, svmRad = m3))
+dotplot(confint, conf.level = 0.95, scales = "free")
+
+```
+With this it is hard to say between the second model (linear regression with all variables) and the third model (radial SVM) which performed better as they have overlapping intervals. However, we can for sure say that the first model (linear regression using only strongly correlated values) performed the worst with higher values of RMSE and MAE whilst having no overlapping intervals.
+
+Possible alternate validation methods which could improve confidence levels are the leave one out cross validation. It treats every instance as a fold, and evaluates average performance on as many models as there are data points however it is extremely computationally intensive and would take quite some time
+
+
